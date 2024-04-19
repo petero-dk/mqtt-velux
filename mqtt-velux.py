@@ -6,6 +6,8 @@ from pyvlx import PyVLX, Position, UnknownPosition, PyVLXException, OpeningDevic
 from time import sleep
 import paho.mqtt.client as mqtt
 
+import platform
+
 __usage__ = """
  usage: python mqtt-velux.py [options] configuration_file
  options are:
@@ -120,7 +122,7 @@ async def main(loop):
     config.read(args.pop(0))
 
     # mqtt
-    sub = mqtt.Client(userdata=loop)
+    sub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, userdata=loop)
     sub.on_connect = on_mqtt_connect
     sub.on_message = on_mqtt_message
     if eval(config.get("mqtt", "auth")):
@@ -166,8 +168,12 @@ def signal_handler(signum, frame):
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGHUP, signal_handler)
+    
+    if platform.system() == 'Linux':
+        signal.signal(signal.SIGHUP, signal_handler)
+    
     signal.signal(signal.SIGTERM, signal_handler)
+
     try:
         LOOP = asyncio.get_event_loop()
         LOOP.run_until_complete(main(LOOP))
