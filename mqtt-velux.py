@@ -20,6 +20,7 @@ class DebugStreamHandler(logging.StreamHandler):
     def __init__(self):
         logging.StreamHandler.__init__(self)
     def emit(self, record):
+        print(record.levelname + ": " + record.getMessage())
         if not parms["debug"]:
             logging.StreamHandler.emit(self, record)
             return
@@ -28,7 +29,7 @@ class DebugStreamHandler(logging.StreamHandler):
             sub.publish(
                 config.get("mqtt", "response") + "/mqtt-velux/system/" + record.levelname.lower(),
                 record.message,
-                retain=eval(config.get("mqtt", "retain")))
+                retain=config.retain)
         except Exception as e:
             print(e)
 
@@ -39,6 +40,8 @@ config = {}
 sub = {}
 vlx = {}
 done = 0
+truthy = ['true', '1', 't', 'y', 'yes']
+retain = False
 
 def on_mqtt_connect(client, userdata, flags, rc):
     logger.warning("mqtt connected with result code "+str(rc))
@@ -46,18 +49,26 @@ def on_mqtt_connect(client, userdata, flags, rc):
 
 def on_mqtt_message(client, loop, msg):
     try:
-        device = msg.topic.split(config.get("mqtt", "prefix") + "/", 1)[1]
-        if device == "echo":
+        device = msg.topic.replace(config.get("mqtt", "prefix") + "/", '', 1).split("/", 1)
+        node = device[0]
+        action = device[1]
+        if node == "echo":
             sub.publish(
                 config.get("mqtt", "response") + "/echo",
                 msg.payload.decode('utf-8'),
-                retain=eval(config.get("mqtt", "retain")))
+                retain=config.retain)
             return
         payload = msg.payload.decode('utf-8').lower()
-        logger.info("message received @%s: %s" % (msg.topic, payload))
-        node = re.sub("-position$", "", device.replace("/", "-"))
+        logger.info("message received @%s: setting %s via %s to %s " % (msg.topic, node, action, payload))
         if not node in vlx.nodes:
             raise Exception("unknown node: " + node)
+        
+        if action == "closed":
+            payload = "100" if payload in truthy else "0"
+
+                
+        logger.info("setting position pre @%s: %s" % (node, payload))
+            
         asyncio.run_coroutine_threadsafe(vlx_set_position(node, payload), loop)
     except Exception as msg:
         logger.error(msg)
@@ -65,7 +76,7 @@ def on_mqtt_message(client, loop, msg):
 async def vlx_set_position(node, pos):
     if pos == "close":
         pos = "closed"
-    pct = 0 if pos == "open" else 100 if pos == "closed" else eval(pos) if pos.isdigit() else None
+    pct = 0 if pos == "open" else 100 if pos == "closed" else int(pos) if pos.isdigit() else None
     if pct is None:
         logger.error("invalid position for @%s: %s" % (node, pos))
         return
@@ -79,12 +90,17 @@ async def on_device_updated(node):
         logger.info("device position unknown: %s" % node.name)
         return
     pct = node.position.position_percent
-    msg = "open" if pct == 0 else "closed" if pct == 100 else str(pct)
-    logger.info("device updated: %s = %s" % (node.name, msg))
+    logger.info("device updated: %s = %s" % (node.name, pct))
     sub.publish(
         config.get("mqtt", "response") + "/" + node.name.replace("-", "/") + "/position",
-        msg,
-        retain=eval(config.get("mqtt", "retain")))
+        str(pct),
+        retain=config.retain)
+    
+    closed = str(pct == 100)
+    sub.publish(
+        config.get("mqtt", "response") + "/" + node.name.replace("-", "/") + "/closed",
+        closed,
+        retain=config.retain)
 
 async def main(loop):
     global parms, config, logger, sub, vlx, done
@@ -105,12 +121,12 @@ async def main(loop):
             parms["debug"] = True
             logger.setLevel(logging.DEBUG)
         elif o == '-v' or o == '--verbose':
-            if logger.getEffectiveLevel() == logging.ERROR:
-                logger.setLevel(logging.WARNING)
-            elif logger.getEffectiveLevel() == logging.WARNING:
-                logger.setLevel(logging.INFO)
-            else:
-                logger.setLevel(logging.DEBUG)
+            #if logger.getEffectiveLevel() == logging.ERROR:
+            #    logger.setLevel(logging.WARNING)
+            #elif logger.getEffectiveLevel() == logging.WARNING:
+            logger.setLevel(logging.INFO)
+            #else:
+            #    logger.setLevel(logging.DEBUG)
     # check arguments
     if len(args) < 1:
         logger.error("at least 1 argument required")
@@ -120,6 +136,7 @@ async def main(loop):
     config = configparser.ConfigParser()
     config.optionxform = str
     config.read(args.pop(0))
+    config.retain = config.get("mqtt", "retain") in truthy
 
     # mqtt
     sub = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, userdata=loop)
@@ -144,7 +161,7 @@ async def main(loop):
         sub.publish(
             config.get("mqtt", "response") + "/mqtt-velux/system/message",
             "started: " + nodes,
-            retain=eval(config.get("mqtt", "retain")))
+            retain=config.retain)
 
     logger.info("looping...")
     while not done:
@@ -157,7 +174,7 @@ async def main(loop):
     sub.publish(
         config.get("mqtt", "response") + "/mqtt-velux/system/message",
         "ended.",
-        retain=eval(config.get("mqtt", "retain")))
+        retain=config.retain)
     logger.info("ended.")
 
 def signal_handler(signum, frame):
