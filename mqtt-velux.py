@@ -64,7 +64,7 @@ def on_mqtt_message(client, loop, msg):
             raise Exception("unknown node: " + node)
         
         if action == "closed":
-            payload = "100" if payload in truthy else "0"
+            payload = "0" if payload in truthy else "100"
 
                 
         logger.info("setting position pre @%s: %s" % (node, payload))
@@ -76,7 +76,7 @@ def on_mqtt_message(client, loop, msg):
 async def vlx_set_position(node, pos):
     if pos == "close":
         pos = "closed"
-    pct = 0 if pos == "open" else 100 if pos == "closed" else int(pos) if pos.isdigit() else None
+    pct = 100 if pos == "open" else 0 if pos == "closed" else (100 - int(pos)) if pos.isdigit() else None
     if pct is None:
         logger.error("invalid position for @%s: %s" % (node, pos))
         return
@@ -93,10 +93,10 @@ async def on_device_updated(node):
     logger.info("device updated: %s = %s" % (node.name, pct))
     sub.publish(
         config.get("mqtt", "response") + "/" + node.name.replace("-", "/") + "/position",
-        str(pct),
+        str(100 - pct),
         retain=config.retain)
     
-    closed = str(pct == 100)
+    closed = str(pct == 0)
     sub.publish(
         config.get("mqtt", "response") + "/" + node.name.replace("-", "/") + "/closed",
         closed,
