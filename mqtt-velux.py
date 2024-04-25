@@ -169,7 +169,6 @@ async def main(loop):
         for n in vlx.nodes:
             n.register_device_updated_cb(on_device_updated)
             logger.info(str(n))
-            nodes.append()
             s = await vlx.nodes[n.name].get_limitation()
             
 
