@@ -177,7 +177,7 @@ async def main(loop):
                 s.min_value != 0,
                 retain=config.retain)
             
-            await on_device_updated(n)
+            on_device_updated(n)
         await asyncio.sleep(60)
         
 
