@@ -174,10 +174,10 @@ async def main(loop):
 
             sub.publish(
                 config.get("mqtt", "response") + "/" + n.name.replace("-", "/") + "/rain",
-                s.min_value,
+                s.min_value != 0,
                 retain=config.retain)
             
-            on_device_updated(n)
+            await on_device_updated(n)
         await asyncio.sleep(60)
         
 
