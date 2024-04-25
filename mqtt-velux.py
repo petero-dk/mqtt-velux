@@ -83,6 +83,7 @@ async def vlx_set_position(node, pos):
     logger.info("setting position @%s: %s" % (node, pct))
     await vlx.nodes[node].set_position(Position(position_percent=pct), wait_for_completion=False)
 
+
 async def on_device_updated(node):
     if not isinstance(node, OpeningDevice):
         return
@@ -165,7 +166,21 @@ async def main(loop):
 
     logger.info("looping...")
     while not done:
-        await asyncio.sleep(0.1)
+        for n in vlx.nodes:
+            n.register_device_updated_cb(on_device_updated)
+            logger.info(str(n))
+            nodes.append()
+            s = await vlx.nodes[n.name].get_limitation()
+            
+
+            sub.publish(
+                config.get("mqtt", "response") + "/" + n.name.replace("-", "/") + "/rain",
+                s.min_value,
+                retain=config.retain)
+            
+            on_device_updated(n)
+        await asyncio.sleep(60)
+        
 
     logger.info("done.")
     sub.loop_stop()
